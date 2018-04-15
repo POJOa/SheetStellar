@@ -78,7 +78,7 @@ end
 # update the document specified by :id, setting just its
 # name attribute to params[:name], then return the full
 # document
-put '/sheet_name/:id/?' do
+put '/sheet/:id/:name/?' do
   content_type :json
   id   = object_id(params[:id])
   name = params[:name]
@@ -116,9 +116,9 @@ post '/sheet/init' do
 
     heads_collection = settings.heads
     result = heads_collection.insert_one :content => head_content
-    heads_collection.find(:_id => result.inserted_id).to_a.first.to_json
+    # heads_collection.find(:_id => result.inserted_id).to_a.first.to_json
 
     sheets_collection = settings.sheets
-    result =  sheets_collection.insert_one :head_id => result.inserted_id
+    result =  sheets_collection.insert_one({:head_id => result.inserted_id,:title => (@filename.sub! '.'+filetype.to_s, "") })
     sheets_collection.find(:_id => result.inserted_id).to_a.first.to_json
 end
