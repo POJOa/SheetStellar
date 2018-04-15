@@ -5,10 +5,13 @@ require 'tempfile'
 require 'roo'
 require 'roo-xls'
 
-enable :sessions
 
 configure do
   set :mongo,  Mongo::Client.new([ '127.0.0.1:27017' ], :database => 'leyline-sheet')
+
+  use Rack::Session::Cookie, :key => 'rack.session',
+      :path => '/',
+      :secret => 'change_it_later'
 end
 
 get "/" do
@@ -75,13 +78,23 @@ end
 
 post '/login' do
   content_type :json
-  users = settings.mongo[:users]
-  res = users.find(:name=>params[:name],:password=>params[:password]).to_a.first
-  unless res.nil?
-    session['userId'] = res['_id']
+  unless session['user_id'].nil? #已经登陆
     return 200
   end
-  return 403
+
+  users = settings.mongo[:users]
+  login_info =  JSON.parse(request.body.read)
+  res = users.find(login_info).to_a.first
+
+  unless res.nil? #匹配
+    session['user_id'] = res['_id'].to_s #登陆用户id信息存入Session
+    return 200
+  end
+  return 403 #access denied
+end
+
+get '/logout' do
+  session.clear
 end
 
 helpers do
@@ -101,6 +114,32 @@ helpers do
     end
     return (res || {})
   end
+
+  def get_current_user
+    if session['user_id'].nil?
+      return nil
+    end
+    users = settings.mongo[:users]
+    return find_document_by_id(session['user_id'],users)
+  end
+
+  def get_user_row_by_sheet_id(sheet_id)
+    current_user = get_current_user
+    sheets = settings.mongo[:sheets]
+    # query = {:_id => to_object_id(params[:sheet]),
+    #          :rows => {:user => current_user[:_id]}}
+    # db.getCollection('sheets').aggregate([{$match:{_id:ObjectId('5ad37c24ff301e203839e2d2')}}, {$unwind: "$rows"}, {$match:{"rows.user":ObjectId('5ad370a9ff301e27088619a1')}}])
+    query =[     {"$match"=> {:_id=> to_object_id(sheet_id)}},
+                 {"$unwind" => "$rows"},
+                 {"$match"=> {"rows.user"=> current_user[:_id]}}
+    ]
+    sheet = sheets.aggregate(query)
+    begin
+      return sheet.first[:rows]
+    rescue
+      return nil
+    end
+  end
 end
 
 post '/sheet/init' do
@@ -113,14 +152,47 @@ post '/sheet/init' do
   sheet = raw.sheet(0)
   head_names = sheet.row(HEAD_ROW_NUM)
   head_content_type = sheet.row(HEAD_ROW_NUM+1)
-
   head_content = head_names.each_with_index.map{|head_name,index|{head_name=>head_content_type[index]}}.to_a
 
-  heads_collection = settings.mongo[:heads]
-  result = heads_collection.insert_one :content => head_content
+  heads = settings.mongo[:heads]
+  result = heads.insert_one :content => head_content
 
-  sheets_collection = settings.mongo[:sheets]
-  result =  sheets_collection.insert_one({:head => result.inserted_id,:title => (@filename.sub! '.'+filetype.to_s, "") })
-  find_document_by_id(result.inserted_id,sheets_collection).to_json
+  sheets = settings.mongo[:sheets]
+  result =  sheets.insert_one({:head => result.inserted_id,:title => (@filename.sub! '.'+filetype.to_s, ""),:rows => [] })
+  find_document_by_id(result.inserted_id,sheets).to_json
 end
 
+get '/sheet/:sheet/row' do
+  current_user = get_current_user
+  if current_user.nil?
+    return 403
+  end
+  get_user_row_by_sheet_id(params[:sheet]).to_json
+end
+
+post '/sheet/:sheet/row' do
+  current_user = get_current_user
+  if current_user.nil?
+    return 403
+  end
+
+  sheets = settings.mongo[:sheets]
+  new_row =  JSON.parse(request.body.read)
+  current_user_id = get_current_user[:_id]
+  new_row['user'] = current_user_id
+  sheets.find_one_and_update(
+            {:_id=>to_object_id(params[:sheet]) },
+            {
+                "$pull"=>{:rows=>{:user=>current_user_id}},
+                # "$push"=>{:rows=>new_row}
+            }
+  )
+  result = sheets.find_one_and_update(
+      {:_id=>to_object_id(params[:sheet]) },
+      {
+          "$push"=>{:rows=>new_row}
+      }
+  )
+  find_document_by_id(result[:_id],sheets).to_json
+
+end
