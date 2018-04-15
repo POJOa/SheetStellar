@@ -1,17 +1,22 @@
 require 'sinatra'
 require 'json/ext' # required for .to_json
 require 'mongo'
+require 'roo'
+require 'roo-xls'
+require 'tempfile'
 
 configure do
   db = Mongo::Client.new([ '127.0.0.1:27017' ], :database => 'leyline-sheet')
-  sheets = db[:Sheets]
+
   set :mongo_db, db
-  set :sheets, sheets
+  set :sheets, db[:Sheets]
+  set :heads, db[:Heads]
+  set :users, db[:Users]
 
 end
 
-get '/' do
-  'Hello world!'
+get "/" do
+  erb :form
 end
 
 get '/collections/?' do
@@ -42,18 +47,18 @@ helpers do
 end
 
 # list all documents in the test collection
-get '/documents/?' do
+get '/sheets/?' do
   content_type :json
   settings.sheets.find.to_a.to_json
 end
 
 # find a document by its ID
-get '/document/:id/?' do
+get '/sheet/:id/?' do
   content_type :json
   document_by_id(params[:id])
 end
 
-post '/new_document/?' do
+post '/sheet/?' do
   content_type :json
   db = settings.sheets
   result = db.insert_one params
@@ -62,7 +67,7 @@ end
 
 # update the document specified by :id, setting its
 # contents to params, then return the full document
-put '/update/:id/?' do
+put '/sheet/:id/?' do
   content_type :json
   id = object_id(params[:id])
   settings.sheets.find(:_id => id).
@@ -73,7 +78,7 @@ end
 # update the document specified by :id, setting just its
 # name attribute to params[:name], then return the full
 # document
-put '/update_name/:id/?' do
+put '/sheet_name/:id/?' do
   content_type :json
   id   = object_id(params[:id])
   name = params[:name]
@@ -83,7 +88,7 @@ put '/update_name/:id/?' do
 end
 
 # delete the specified document and return success
-delete '/remove/:id' do
+delete '/sheet/:id' do
   content_type :json
   db = settings.sheets
   id = object_id(params[:id])
@@ -94,4 +99,26 @@ delete '/remove/:id' do
   else
     {:success => false}.to_json
   end
+end
+
+post '/sheet/init' do
+    HEAD_ROW_NUM = 1
+    @filename = params[:file][:filename]
+    file = params[:file][:tempfile]
+    filetype = File.extname(@filename) == '.xls' ? :xls : :xlsx
+    raw = Roo::Spreadsheet.open(file.path, extension: filetype)
+
+    sheet = raw.sheet(0)
+    head_names = sheet.row(HEAD_ROW_NUM)
+    head_content_type = sheet.row(HEAD_ROW_NUM+1)
+
+    head_content = head_names.each_with_index.map{|head_name,index|{head_name=>head_content_type[index]}}.to_a
+
+    heads_collection = settings.heads
+    result = heads_collection.insert_one :content => head_content
+    heads_collection.find(:_id => result.inserted_id).to_a.first.to_json
+
+    sheets_collection = settings.sheets
+    result =  sheets_collection.insert_one :head_id => result.inserted_id
+    sheets_collection.find(:_id => result.inserted_id).to_a.first.to_json
 end
