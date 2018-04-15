@@ -35,12 +35,12 @@ helpers do
     end
   end
 
-  def document_by_id id
-    id = object_id(id) if String === id
+  def document_by_id (id,collection)
+      id = object_id(id) if String === id
     if id.nil?
       {}.to_json
     else
-      document = settings.mongo_db.find(:_id => id).to_a.first
+      document = collection.find(:_id => id).to_a.first
       (document || {}).to_json
     end
   end
@@ -55,7 +55,9 @@ end
 # find a document by its ID
 get '/sheet/:id/?' do
   content_type :json
-  document_by_id(params[:id])
+  sheet_unpopulated = settings.sheets.find(:_id => object_id(params[:id])).to_a.first
+  sheet_unpopulated[:head] = document_by_id(sheet_unpopulated[:head],settings.heads)
+  return sheet_unpopulated.to_json
 end
 
 post '/sheet/?' do
@@ -119,6 +121,6 @@ post '/sheet/init' do
     # heads_collection.find(:_id => result.inserted_id).to_a.first.to_json
 
     sheets_collection = settings.sheets
-    result =  sheets_collection.insert_one({:head_id => result.inserted_id,:title => (@filename.sub! '.'+filetype.to_s, "") })
+    result =  sheets_collection.insert_one({:head => result.inserted_id,:title => (@filename.sub! '.'+filetype.to_s, "") })
     sheets_collection.find(:_id => result.inserted_id).to_a.first.to_json
 end
