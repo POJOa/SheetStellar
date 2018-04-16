@@ -155,7 +155,7 @@ helpers do
     begin
       return sheet.first[:rows]
     rescue
-      return nil
+      return {}
     end
   end
 end
