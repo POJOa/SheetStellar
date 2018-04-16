@@ -4,18 +4,36 @@ require 'mongo'
 require 'tempfile'
 require 'roo'
 require 'roo-xls'
+require "sinatra/cors"
 
+set :allow_origin, "http://crazyrex.com:9528"
+set :allow_methods, "HEAD,GET,PUT,POST,DELETE,OPTIONS"
+set :allow_headers, "Authorization, Content-Type, Accept, X-User-Email, X-Auth-Token"
+set :allow_credentials, "true"
 
 configure do
   set :mongo,  Mongo::Client.new([ '127.0.0.1:27017' ], :database => 'leyline-sheet')
-
-  use Rack::Session::Cookie, :key => 'rack.session',
-      :path => '/',
-      :secret => 'change_it_later'
 end
 
-get "/" do
-  erb :form
+#enable :sessions
+use Rack::Session::Cookie, :key => 'rack.session',
+    :path => '/',
+    :secret => 'your_secret'
+
+before do
+  response.headers['Access-Control-Allow-Origin'] = '*'
+end
+
+# options "*" do
+#   response.headers["Allow"] = "HEAD,GET,PUT,POST,DELETE,OPTIONS"
+#   response.headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type, Accept, X-User-Email, X-Auth-Token"
+#   response.headers["Access-Control-Allow-Origin"] = "http://crazyrex.com:9528"
+#   response.headers["Access-Control-Allow-Credentials"] = "true"
+#   200
+# end
+
+get "/upload" do
+  erb :upload
 end
 
 get '/collections/?' do
@@ -79,7 +97,7 @@ end
 post '/login' do
   content_type :json
   unless session['user_id'].nil? #已经登陆
-    return 200
+    return {:success => true}.to_json
   end
 
   users = settings.mongo[:users]
@@ -88,7 +106,7 @@ post '/login' do
 
   unless res.nil? #匹配
     session['user_id'] = res['_id'].to_s #登陆用户id信息存入Session
-    return 200
+    return {:success => true}.to_json
   end
   return 403 #access denied
 end
@@ -181,11 +199,11 @@ post '/sheet/:sheet/row' do
   current_user_id = get_current_user[:_id]
   new_row['user'] = current_user_id
   sheets.find_one_and_update(
-            {:_id=>to_object_id(params[:sheet]) },
-            {
-                "$pull"=>{:rows=>{:user=>current_user_id}},
-                # "$push"=>{:rows=>new_row}
-            }
+      {:_id=>to_object_id(params[:sheet]) },
+      {
+          "$pull"=>{:rows=>{:user=>current_user_id}},
+          # "$push"=>{:rows=>new_row}
+      }
   )
   result = sheets.find_one_and_update(
       {:_id=>to_object_id(params[:sheet]) },

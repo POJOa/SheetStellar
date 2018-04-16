@@ -9,5 +9,4 @@ gem 'mongo'
 gem 'bson_ext'
 gem "roo", "~> 2.7.0"
 gem 'roo-xls'
-
-
+gem 'sinatra-cors'
