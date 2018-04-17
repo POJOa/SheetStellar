@@ -13,6 +13,8 @@ set :allow_credentials, "true"
 
 configure do
   set :mongo,  Mongo::Client.new([ '127.0.0.1:27017' ], :database => 'leyline-sheet')
+  set :protection, :except => :frame_options
+
 end
 
 #enable :sessions
