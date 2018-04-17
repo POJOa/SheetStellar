@@ -8,7 +8,7 @@ require "sinatra/cors"
 
 set :allow_origin, "http://crazyrex.com:9528"
 set :allow_methods, "HEAD,GET,PUT,POST,DELETE,OPTIONS"
-set :allow_headers, "Authorization, Content-Type, Accept, X-User-Email, X-Auth-Token"
+set :allow_headers, "Authorization, Content-Type, Accept, X-User-Email, X-Auth-Token, X-Token"
 set :allow_credentials, "true"
 
 configure do
@@ -19,18 +19,6 @@ end
 use Rack::Session::Cookie, :key => 'rack.session',
     :path => '/',
     :secret => 'your_secret'
-
-before do
-  response.headers['Access-Control-Allow-Origin'] = '*'
-end
-
-# options "*" do
-#   response.headers["Allow"] = "HEAD,GET,PUT,POST,DELETE,OPTIONS"
-#   response.headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type, Accept, X-User-Email, X-Auth-Token"
-#   response.headers["Access-Control-Allow-Origin"] = "http://crazyrex.com:9528"
-#   response.headers["Access-Control-Allow-Credentials"] = "true"
-#   200
-# end
 
 get "/upload" do
   erb :upload
@@ -109,6 +97,15 @@ post '/login' do
     return {:success => true}.to_json
   end
   return 403 #access denied
+end
+
+get '/login/info' do
+  user = get_current_user
+  unless user.nil?
+    user.delete('password')
+    return user.to_json
+  end
+  return 403
 end
 
 get '/logout' do
