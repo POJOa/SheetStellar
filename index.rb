@@ -122,7 +122,18 @@ helpers do
       nil
     end
   end
+  def get_head_content(params)
+    started_at = 1
+    @filename = params[:file][:filename]
+    file = params[:file][:tempfile]
+    filetype = File.extname(@filename) == '.xls' ? :xls : :xlsx
+    raw = Roo::Spreadsheet.open(file.path, extension: filetype)
 
+    sheet = raw.sheet(0)
+    head_names = sheet.row(started_at)
+    head_content_type = sheet.row(started_at+1)
+    return head_names.each_with_index.map{|head_name,index|{head_name=>head_content_type[index]}}.to_a
+  end
   def find_document_by_id (id,collection)
     id = to_object_id(id) if String === id
     res = nil
@@ -160,16 +171,9 @@ helpers do
 end
 
 post '/sheet/init' do
-  HEAD_ROW_NUM = 1
   @filename = params[:file][:filename]
-  file = params[:file][:tempfile]
   filetype = File.extname(@filename) == '.xls' ? :xls : :xlsx
-  raw = Roo::Spreadsheet.open(file.path, extension: filetype)
-
-  sheet = raw.sheet(0)
-  head_names = sheet.row(HEAD_ROW_NUM)
-  head_content_type = sheet.row(HEAD_ROW_NUM+1)
-  head_content = head_names.each_with_index.map{|head_name,index|{head_name=>head_content_type[index]}}.to_a
+  head_content = get_head_content(params)
 
   heads = settings.mongo[:heads]
   result = heads.insert_one :content => head_content
@@ -177,6 +181,17 @@ post '/sheet/init' do
   sheets = settings.mongo[:sheets]
   result =  sheets.insert_one({:head => result.inserted_id,:title => (@filename.sub! '.'+filetype.to_s, ""),:rows => [] })
   find_document_by_id(result.inserted_id,sheets).to_json
+end
+
+post '/sheet/:id/head' do
+  @filename = params[:file][:filename]
+  filetype = File.extname(@filename) == '.xls' ? :xls : :xlsx
+  head_content = get_head_content(params)
+  sheets = settings.mongo[:sheets]
+  sheet = find_document_by_id(params[:id],sheets)
+  heads = settings.mongo[:heads]
+  head = heads.find_one_and_replace({:_id=>sheet[:head]},{:content => head_content})
+  find_document_by_id(sheet[:_id],sheets).to_json
 end
 
 get '/sheet/:sheet/row' do
