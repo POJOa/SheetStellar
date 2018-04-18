@@ -1,3 +1,5 @@
+#encoding=UTF-8
+
 require 'sinatra'
 require 'json/ext' # required for .to_json
 require 'mongo'
@@ -6,7 +8,7 @@ require 'roo'
 require 'roo-xls'
 require "sinatra/cors"
 
-set :allow_origin, "http://crazyrex.com:9528"
+set :allow_origin, "http://crazyrex.com:9428"
 set :allow_methods, "HEAD,GET,PUT,POST,DELETE,OPTIONS"
 set :allow_headers, "Authorization, Content-Type, Accept, X-User-Email, X-Auth-Token, X-Token"
 set :allow_credentials, "true"
@@ -21,10 +23,6 @@ end
 use Rack::Session::Cookie, :key => 'rack.session',
     :path => '/',
     :secret => 'your_secret'
-
-get "/upload" do
-  erb :upload
-end
 
 get '/collections/?' do
   content_type :json
@@ -151,6 +149,25 @@ helpers do
     return find_document_by_id(session['user_id'],users)
   end
 
+  def update_user_reserved_info(new_row)
+    current_user = get_current_user
+    sheet = find_document_by_id(params[:sheet],settings.mongo[:sheets])
+    head = find_document_by_id(sheet[:head],settings.mongo[:heads])
+    head[:content].each do |element|
+      element.each do |k,v|
+        next if v.nil? or  new_row[k].nil?
+        first, *rest = v.to_s.split(/\./)
+        if first.include? '%系统'
+          # TODO
+        elsif  first.include? '%用户'
+          reserved_field_name = rest[0]
+          current_user[:reserved][reserved_field_name] = new_row[k]
+        end
+      end
+    end
+    settings.mongo[:users].find_one_and_replace({:_id=>current_user[:_id]},current_user)
+  end
+
   def get_user_row_by_sheet_id(sheet_id)
     current_user = get_current_user
     sheets = settings.mongo[:sheets]
@@ -184,12 +201,10 @@ post '/sheet/init' do
 end
 
 post '/sheet/:id/head' do
-  @filename = params[:file][:filename]
-  filetype = File.extname(@filename) == '.xls' ? :xls : :xlsx
   head_content = get_head_content(params)
   sheets = settings.mongo[:sheets]
-  sheet = find_document_by_id(params[:id],sheets)
   heads = settings.mongo[:heads]
+  sheet = find_document_by_id(params[:id],sheets)
   head = heads.find_one_and_replace({:_id=>sheet[:head]},{:content => head_content})
   find_document_by_id(sheet[:_id],sheets).to_json
 end
@@ -203,13 +218,21 @@ get '/sheet/:sheet/row' do
 end
 
 post '/sheet/:sheet/row' do
+  content_type :json
   current_user = get_current_user
   if current_user.nil?
     return 403
   end
 
-  sheets = settings.mongo[:sheets]
   new_row =  JSON.parse(request.body.read)
+
+  begin
+    update_user_reserved_info(new_row)
+  rescue  Exception => e
+    puts e.message
+  end
+
+  sheets = settings.mongo[:sheets]
   current_user_id = get_current_user[:_id]
   new_row['user'] = current_user_id
   sheets.find_one_and_update(
