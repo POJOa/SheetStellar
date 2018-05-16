@@ -251,3 +251,16 @@ post '/sheet/:sheet/row' do
   find_document_by_id(result[:_id],sheets).to_json
 
 end
+
+
+# GIS
+get '/' do
+  File.read('index.html')
+end
+
+get '/gis/collection/:collection/?' do
+  content_type :json
+  q = params[:query] === nil ? {} : JSON.parse(params[:query])
+  collection = settings.mongo[params[:collection]]
+  collection.find(q).to_a.to_json
+end

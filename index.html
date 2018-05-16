@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>demo | vue-amap</title>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="https://unpkg.com/sakura.css/css/sakura.css" type="text/css">
+
+</head>
+<body>
+<div id="app">
+    <el-amap
+            vid="amapDemo"
+            :center="center"
+            :zoom="zoom"
+            class="amap-demo"
+            :events="events">
+        <el-amap-marker v-for="(marker, index) in data" :position="marker.position" :events="marker.events" :visible="marker.visible" :draggable="marker.draggable" :vid="index" :key="index" :content="marker.content"></el-amap-marker>
+        <!--<el-amap-info-window v-if="window" :position="window.position" :visible="window.visible" :content="window.content"></el-amap-info-window>-->
+        <el-amap-marker v-for="(marker, index) in overlay" :position="marker.position" :events="marker.events" :visible="marker.visible" :draggable="marker.draggable" :vid="index+'overlay'" :key="index+'overlay'" :content="marker.content"></el-amap-marker>
+        <el-amap-circle v-if="circles.length" v-for="circle in circles" :center="circle.center" :radius="circle.radius" :fill-opacity="circle.fillOpacity" :events="circle.events"></el-amap-circle>
+
+    </el-amap>
+    <div style="display: flex;flex:1;flexDirection:row;justifyContent:flex-start">
+        <div style="display: flex;flex:1;">
+            <fieldset>
+                <legend>选点信息</legend>
+                <div>
+                    <p>
+                    坐标: [{{ lng }}, {{ lat }}]
+                    </p>
+                    <p>
+                        地址: {{ address }}
+                    </p>
+                    <p>
+                       半径（km）:
+                        <input type="text" v-model="distance" id="dist" />
+                    </p>
+                </div>
+            </fieldset>
+        </div>
+        <div style="display: flex;flex:1;">
+            <fieldset>
+                <legend>查询对象</legend>
+                {{queryObject}}
+            </fieldset>
+        </div>
+    </div>
+    <hr>
+    <table>
+        <caption>
+            均价:{{avgPrice}}元
+        </caption>
+        <thead>
+            <tr>
+                <th align="left">小区名</th>
+                <th align="left">房号</th>
+                <th align="left">房型</th>
+                <th align="left">面积</th>
+                <th align="left">总价</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr v-for="o in overlayRaw">
+                <td align="left">{{o.name}}</td>
+                <td align="left">{{o.room}}</td>
+                <td align="left">{{o.type}}</td>
+                <td align="left">{{o.area}}</td>
+                <td align="left">{{o.price}}</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+</body>
+<!-- 先引入 Vue -->
+<script src="https://unpkg.com/vue/dist/vue.js"></script>
+<!-- 引入组件库 -->
+<script src="https://unpkg.com/vue-amap/dist/index.js"></script>
+<script>
+    // 初始化高德地图的 key 和插件
+    window.VueAMap.initAMapApiLoader({
+        key: 'eaaaff743fe211d99c8b76ff112b754b',
+        plugin: ['Autocomplete', 'PlaceSearch', 'Scale', 'OverView', 'ToolBar', 'MapType', 'PolyEditor', 'AMap.CircleEditor','Geocoder'],
+        // 默认高德 sdk 版本为 1.4.4
+        v: '1.4.4'
+    });
+
+
+
+
+
+
+    new Vue({
+        el: '#app',
+        created (){
+            fetch('http://crazyrex.com:4567/gis/collection/sanlin2018?query={}')
+                .then((response) => response.json())
+                .then(resp=>{
+                    this.data = resp.map(row=>{
+                        let spanContent = row.region + row.name + row.room + row.area + row.price
+                        let pos = row.location.coordinates
+                        return {
+                            position:pos,
+                            visible:true,
+                            draggable:false,
+                            content: '<div style="text-align:center; background-color: hsla(31,100%,50%,0.2); height: 12px; width: 12px; border-radius: 6px; "></div>',
+                        }
+                    })
+                })
+        },
+        computed: {
+            avgPrice: function () {
+                return this.overlayRaw && this.overlayRaw.length ? Math.round(this.overlayRaw.map(i=>parseFloat(i['unit price'])).reduce((a,b)=>a+b) / this.overlayRaw.length * 10000) : 0
+            }
+        },
+        methods:{
+
+             wgs84togcj02(lng, lat) {
+                var lat = +lat;
+                var lng = +lng;
+                    var dlat = this.transformlat(lng - 105.0, lat - 35.0);
+                    var dlng = this.transformlng(lng - 105.0, lat - 35.0);
+                    var radlat = lat / 180.0 * 3.1415926;
+                    var magic = Math.sin(radlat);
+                    magic = 1 - 0.00669342162296594323 * magic * magic;
+                    var sqrtmagic = Math.sqrt(magic);
+                    dlat = (dlat * 180.0) / ((6378245.0 * (1 - 0.00669342162296594323)) / (magic * sqrtmagic) * 3.1415926);
+                    dlng = (dlng * 180.0) / (6378245.0 / sqrtmagic * Math.cos(radlat) * 3.1415926);
+                    var mglat = lat + dlat;
+                    var mglng = lng + dlng;
+                    return [mglng, mglat]
+            },
+
+    gcj02towgs84(lng, lat) {
+        var lat = +lat;
+        var lng = +lng;
+
+            var dlat = this.transformlat(lng - 105.0, lat - 35.0);
+            var dlng = this.transformlng(lng - 105.0, lat - 35.0);
+            var radlat = lat / 180.0 * 3.1415926;
+            var magic = Math.sin(radlat);
+            magic = 1 - 0.00669342162296594323 * magic * magic;
+            var sqrtmagic = Math.sqrt(magic);
+            dlat = (dlat * 180.0) / ((6378245.0 * (1 - 0.00669342162296594323)) / (magic * sqrtmagic) * 3.1415926);
+            dlng = (dlng * 180.0) / (6378245.0 / sqrtmagic * Math.cos(radlat) * 3.1415926);
+            var mglat = lat + dlat;
+            var mglng = lng + dlng;
+            return [lng * 2 - mglng, lat * 2 - mglat]
+
+    },
+
+    transformlat(lng, lat) {
+        var lat = +lat;
+        var lng = +lng;
+        var ret = -100.0 + 2.0 * lng + 3.0 * lat + 0.2 * lat * lat + 0.1 * lng * lat + 0.2 * Math.sqrt(Math.abs(lng));
+        ret += (20.0 * Math.sin(6.0 * lng * 3.1415926) + 20.0 * Math.sin(2.0 * lng * 3.1415926)) * 2.0 / 3.0;
+        ret += (20.0 * Math.sin(lat * 3.1415926) + 40.0 * Math.sin(lat / 3.0 * 3.1415926)) * 2.0 / 3.0;
+        ret += (160.0 * Math.sin(lat / 12.0 * 3.1415926) + 320 * Math.sin(lat * 3.1415926 / 30.0)) * 2.0 / 3.0;
+        return ret
+    },
+
+    transformlng(lng, lat) {
+        var lat = +lat;
+        var lng = +lng;
+        var ret = 300.0 + lng + 2.0 * lat + 0.1 * lng * lng + 0.1 * lng * lat + 0.1 * Math.sqrt(Math.abs(lng));
+        ret += (20.0 * Math.sin(6.0 * lng * 3.1415926) + 20.0 * Math.sin(2.0 * lng * 3.1415926)) * 2.0 / 3.0;
+        ret += (20.0 * Math.sin(lng * 3.1415926) + 40.0 * Math.sin(lng / 3.0 * 3.1415926)) * 2.0 / 3.0;
+        ret += (150.0 * Math.sin(lng / 12.0 * 3.1415926) + 300.0 * Math.sin(lng / 30.0 * 3.1415926)) * 2.0 / 3.0;
+        return ret
+    },
+            distant(p , d){
+                if(!d) return
+                let queryObject= {
+                    location:{
+                        $nearSphere:{
+                            $geometry : {
+                                type: 'Point',
+                                    coordinates: p
+                            },
+                            $maxDistance: d * 1000
+                        }
+                    }
+                }
+                this.queryObject = queryObject
+
+                fetch('http://crazyrex.com:4567/collection/sanlin2018?query='+JSON.stringify(queryObject))
+                    .then((response) => response.json())
+                    .then(resp=>{
+                        this.overlayRaw = resp
+                        this.overlay = resp.map(row=>{
+                            let spanContent = row.region + row.name + row.room + row.area + row.price
+                            let pos = row.location.coordinates
+                            return {
+                                position:pos,
+                                visible:true,
+                                draggable:false,
+                                content: '<div style="text-align:center; background-color: hsla(178,100%,51%,1); height: 12px; width: 12px; border-radius: 6px; "></div>',
+                            }
+                        })
+                    })
+            }
+        },
+        data (){
+            let self = this;
+            return {
+                queryObject:{},
+                distance:0.5,
+                data: [],
+                overlay: [],
+                overlayRaw: [],
+                circles:[],
+                zoom: 13,
+                center: [121.496786, 31.158598],
+                address: '',
+                lng: 121.496786,
+                lat: 31.158598,
+                events: {
+                    click(e) {
+                        let { lng, lat } = e.lnglat;
+                        self.lng = lng;
+                        self.lat = lat;
+
+                        var geocoder = new AMap.Geocoder({
+                            radius: 1000,
+                            extensions: "all"
+                        });
+
+                        self.circles = [{
+                                center: [lng ,lat],
+                                radius: self.distance * 1000,
+                                fillOpacity: 0.5,
+                                events: {
+                                    click: () => {
+                                        alert('click');
+                                    }
+                                }
+                        }]
+
+                        console.log(self.circles)
+
+
+                        geocoder.getAddress([lng ,lat], function(status, result) {
+                            if (status === 'complete' && result.info === 'OK') {
+                                if (result && result.regeocode) {
+                                    self.address = result.regeocode.formattedAddress;
+                                    self.$nextTick();
+                                }
+                            }
+                        });
+                        self.distant([lng, lat],self.distance)
+                    },
+                }
+            }
+        }
+    });
+</script>
+<style>
+    .amap-demo {
+        height: 70vh;
+    }
+</style>
+</html>
